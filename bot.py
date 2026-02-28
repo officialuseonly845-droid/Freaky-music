@@ -5,9 +5,11 @@ import logging
 import yt_dlp
 from aiohttp import web
 from pyrogram import Client, filters, idle
-from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioQuality, VideoQuality
-from pytgcalls.types import MediaStream
+from pytgcalls import GroupCallFile
+from pytgcalls.types.input_stream import AudioVideoPiped, AudioPiped
+from pytgcalls.types.input_stream.quality import (
+    HighQualityAudio, MediumQualityVideo
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,14 +17,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-API_ID = int(os.getenv("API_ID"))
+API_ID   = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
 bot = Client("VideoBot", API_ID, API_HASH, bot_token=BOT_TOKEN)
 assistant = Client("Assistant", API_ID, API_HASH, session_string=SESSION_STRING)
-call_py = PyTgCalls(assistant)
+group_call = GroupCallFile(assistant)
 
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -101,20 +103,22 @@ async def play_handler(_, message):
         await m.edit("⬇️ Downloading...")
 
         loop = asyncio.get_event_loop()
-        file_path, title = await loop.run_in_executor(None, download_video, url)
+        file_path, title = await loop.run_in_executor(
+            None, download_video, url
+        )
 
         if not os.path.exists(file_path):
             return await m.edit("❌ Download fail hua.")
 
         await m.edit("📡 VC mein join ho raha hai...")
 
-        await call_py.play(
+        await group_call.join_group_call(
             message.chat.id,
-            MediaStream(
+            AudioVideoPiped(
                 file_path,
-                audio_quality=AudioQuality.HIGH,
-                video_quality=VideoQuality.SD_480p,
-            )
+                HighQualityAudio(),
+                MediumQualityVideo(),
+            ),
         )
 
         await m.edit(
@@ -129,7 +133,7 @@ async def play_handler(_, message):
 @bot.on_message(filters.command("pause") & filters.group)
 async def pause_handler(_, message):
     try:
-        await call_py.pause_stream(message.chat.id)
+        await group_call.pause_stream(message.chat.id)
         await message.reply("⏸ Paused.")
     except Exception as e:
         await message.reply(f"❌ Error: `{e}`")
@@ -137,7 +141,7 @@ async def pause_handler(_, message):
 @bot.on_message(filters.command("resume") & filters.group)
 async def resume_handler(_, message):
     try:
-        await call_py.resume_stream(message.chat.id)
+        await group_call.resume_stream(message.chat.id)
         await message.reply("▶️ Resumed.")
     except Exception as e:
         await message.reply(f"❌ Error: `{e}`")
@@ -145,7 +149,7 @@ async def resume_handler(_, message):
 @bot.on_message(filters.command("stop") & filters.group)
 async def stop_handler(_, message):
     try:
-        await call_py.leave_call(message.chat.id)
+        await group_call.leave_group_call(message.chat.id)
         clear_downloads()
         await message.reply("⏹ Stopped.")
     except Exception as e:
@@ -158,8 +162,6 @@ async def main():
         logger.info("✅ Bot started")
         await assistant.start()
         logger.info("✅ Assistant started")
-        await call_py.start()
-        logger.info("✅ PyTgCalls started")
         await start_web_server()
         logger.info("🚀 All systems online!")
         await idle()
