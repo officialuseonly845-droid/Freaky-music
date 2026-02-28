@@ -26,32 +26,7 @@ assistant = Client("Assistant", API_ID, API_HASH, session_string=SESSION_STRING)
 call_py = PyTgCalls(assistant)
 
 DOWNLOAD_DIR = "downloads"
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
-
-# --- GLOBAL ERROR HANDLER ---
-# Ye function kisi bhi unhandled error ko pakad lega aur bot ko band hone se bachayega
-@bot.on_message(group=-1) # Group -1 matlab ye har message par check karega
-async def error_resolver(client, message):
-    try:
-        await message.continue_propagation() # Normal commands ko chalne do
-    except Exception as e:
-        logger.error(f"Global Error Caught: {e}")
-        # Agar bada error hai toh user ko bata do, warna silent raho
-        if "Message not found" not in str(e):
-            await message.reply(f"⚠️ **Ek Error Aaya Hai:** `{e}`\nBot abhi bhi online hai.")
-
-# --- UPTIME SERVER ---
-async def health_check(request):
-    return web.Response(text="Bot is Alive & Error Protected!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 8080)))
-    await site.start()
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # --- HELPERS ---
 async def join_assistant(chat_id):
@@ -68,77 +43,119 @@ async def join_assistant(chat_id):
             return f"❌ Assistant join nahi kar paya: {e}"
 
 def clear_downloads():
-    if os.path.exists(DOWNLOAD_DIR):
-        try:
-            shutil.rmtree(DOWNLOAD_DIR)
-            os.makedirs(DOWNLOAD_DIR)
-        except: pass
+    try:
+        shutil.rmtree(DOWNLOAD_DIR)
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Clear downloads error: {e}")
 
-# --- COMMANDS (Wrapped in Try-Except) ---
+# --- UPTIME SERVER ---
+async def health_check(request):
+    return web.Response(text="Bot is Alive!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"✅ Web server started on port {port}")
+
+# --- COMMANDS ---
+
+@bot.on_message(filters.command("start"))
+async def start_handler(_, message):
+    await message.reply(
+        "👋 **Video Bot Online Hai!**\n\n"
+        "**Commands:**\n"
+        "/play <link> — Video/Audio play karo\n"
+        "/pause — Pause karo\n"
+        "/resume — Resume karo\n"
+        "/stop — Stop karo\n"
+    )
 
 @bot.on_message(filters.command("play") & filters.group)
 async def play_handler(_, message):
     try:
         if len(message.command) < 2:
             return await message.reply("❌ Usage: `/play <link>`")
-        
-        url = message.text.split(None, 1)[1]
+
+        url = message.text.split(None, 1)[1].strip()
         m = await message.reply("⏳ Processing...")
 
         join_status = await join_assistant(message.chat.id)
         if join_status is not True:
             return await m.edit(join_status)
 
-        await message.reply("📢 Assistant ko VC mein 'Allow to Speak' kar dein agar stream na dikhe.")
         clear_downloads()
 
         ydl_opts = {
-            "format": "best[height<=480][ext=mp4]", 
-            "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s", 
+            "format": "best[height<=480][ext=mp4]/best[ext=mp4]/best",
+            "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
             "quiet": True,
-            "noplaylist": True
+            "noplaylist": True,
         }
 
+        await m.edit("⬇️ Downloading...")
+
+        loop = asyncio.get_event_loop()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             file_path = ydl.prepare_filename(info)
 
-        await call_py.play(message.chat.id, MediaStream(file_path, video_flags=MediaStream.Flags.SCREEN_SHARE))
-        await m.edit(f"🎬 **Playing:** `{info['title']}`")
-    
-    except Exception as e:
-        logger.error(f"Play Command Error: {e}")
-        await message.reply(f"❌ Play Error: {e}")
+        if not os.path.exists(file_path):
+            return await m.edit("❌ File download nahi hui, link check karo.")
 
-@bot.on_message(filters.command(["pause", "resume", "stop"]) & filters.group)
-async def control_handler(_, message):
+        await m.edit("📡 Streaming start ho raha hai...")
+        await call_py.play(message.chat.id, MediaStream(file_path))
+        await m.edit(f"🎬 **Playing:** `{info['title']}`\n\n⏸ /pause | ▶️ /resume | ⏹ /stop")
+
+    except Exception as e:
+        logger.error(f"Play Error: {e}")
+        await message.reply(f"❌ Error: `{e}`")
+
+@bot.on_message(filters.command("pause") & filters.group)
+async def pause_handler(_, message):
     try:
-        cmd = message.command[0]
-        if cmd == "pause":
-            await call_py.pause_stream(message.chat.id)
-            await message.reply("⏸ Paused.")
-        elif cmd == "resume":
-            await call_py.resume_stream(message.chat.id)
-            await message.reply("▶️ Resumed.")
-        elif cmd == "stop":
-            await call_py.leave_call(message.chat.id)
-            clear_downloads()
-            await message.reply("⏹ Stopped.")
+        await call_py.pause_stream(message.chat.id)
+        await message.reply("⏸ Paused.")
     except Exception as e:
-        logger.error(f"Control Command Error: {e}")
+        await message.reply(f"❌ Error: `{e}`")
 
-# --- START ---
+@bot.on_message(filters.command("resume") & filters.group)
+async def resume_handler(_, message):
+    try:
+        await call_py.resume_stream(message.chat.id)
+        await message.reply("▶️ Resumed.")
+    except Exception as e:
+        await message.reply(f"❌ Error: `{e}`")
+
+@bot.on_message(filters.command("stop") & filters.group)
+async def stop_handler(_, message):
+    try:
+        await call_py.leave_call(message.chat.id)
+        clear_downloads()
+        await message.reply("⏹ Stopped & downloads cleared.")
+    except Exception as e:
+        await message.reply(f"❌ Error: `{e}`")
+
+# --- MAIN ---
 async def main():
     try:
         await bot.start()
+        logger.info("✅ Bot started")
         await assistant.start()
+        logger.info("✅ Assistant started")
         await call_py.start()
+        logger.info("✅ PyTgCalls started")
         await start_web_server()
-        logger.info("✅ Bot, Assistant & Error Handler Online!")
+        logger.info("🚀 Everything is online!")
         await idle()
     except Exception as e:
-        logger.critical(f"Startup Failed: {e}")
+        logger.critical(f"❌ Startup Failed: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
