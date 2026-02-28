@@ -1,0 +1,5 @@
+py-tgcalls[pyrogram]
+tgcrypto
+yt-dlp
+aiohttp
+python-dotenv
