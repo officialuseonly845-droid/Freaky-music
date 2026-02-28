@@ -1,13 +1,15 @@
 FROM python:3.10-slim
 
-# Install system dependencies (FFmpeg is mandatory for video)
-RUN apt-get update && apt-get install -y ffmpeg python3-pip
+# System dependencies aur FFmpeg install karein
+RUN apt-get update && apt-get install -y ffmpeg python3-pip git
 
 WORKDIR /app
 COPY . .
 
-# Install Python libraries directly
-RUN pip install pyrogram pytgcalls[wayla] yt-dlp aiohttp python-dotenv
+# Pehle pip ko upgrade karein phir compatible libraries install karein
+RUN pip install --no-cache-dir -U pip
+RUN pip install --no-cache-dir pyrogram tgcrypto yt-dlp aiohttp python-dotenv
+RUN pip install --no-cache-dir pytgcalls==0.9.10
 
-# Command to run the bot
+# Bot start karne ki command
 CMD ["python", "bot.py"]
