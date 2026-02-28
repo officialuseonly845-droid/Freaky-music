@@ -2,20 +2,18 @@ import os
 import shutil
 import asyncio
 import logging
-from pyrogram import Client, filters, idle
-from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream
 import yt_dlp
 from aiohttp import web
+from pyrogram import Client, filters, idle
+from pyrogram.raw.functions.phone import CreateGroupCall, DiscardGroupCall
+from ntgcalls import NTgCalls
 
-# --- LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# --- CONFIG ---
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -23,7 +21,7 @@ SESSION_STRING = os.getenv("SESSION_STRING")
 
 bot = Client("VideoBot", API_ID, API_HASH, bot_token=BOT_TOKEN)
 assistant = Client("Assistant", API_ID, API_HASH, session_string=SESSION_STRING)
-call_py = PyTgCalls(assistant)
+ntg = NTgCalls()
 
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -47,9 +45,20 @@ def clear_downloads():
         shutil.rmtree(DOWNLOAD_DIR)
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     except Exception as e:
-        logger.warning(f"Clear downloads error: {e}")
+        logger.warning(f"Clear error: {e}")
 
-# --- UPTIME SERVER ---
+def download_video(url):
+    ydl_opts = {
+        "format": "best[height<=480][ext=mp4]/best[ext=mp4]/best",
+        "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
+        "quiet": True,
+        "noplaylist": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info), info["title"]
+
+# --- WEB SERVER ---
 async def health_check(request):
     return web.Response(text="Bot is Alive!")
 
@@ -61,18 +70,14 @@ async def start_web_server():
     port = int(os.getenv("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info(f"✅ Web server started on port {port}")
+    logger.info(f"✅ Web server on port {port}")
 
 # --- COMMANDS ---
-
 @bot.on_message(filters.command("start"))
 async def start_handler(_, message):
     await message.reply(
-        "👋 **Video Bot Online Hai!**\n\n"
-        "**Commands:**\n"
-        "/play <link> — Video/Audio play karo\n"
-        "/pause — Pause karo\n"
-        "/resume — Resume karo\n"
+        "👋 **Video Bot Online!**\n\n"
+        "/play <link> — Play karo\n"
         "/stop — Stop karo\n"
     )
 
@@ -90,54 +95,34 @@ async def play_handler(_, message):
             return await m.edit(join_status)
 
         clear_downloads()
-
-        ydl_opts = {
-            "format": "best[height<=480][ext=mp4]/best[ext=mp4]/best",
-            "outtmpl": f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",
-            "quiet": True,
-            "noplaylist": True,
-        }
-
         await m.edit("⬇️ Downloading...")
 
         loop = asyncio.get_event_loop()
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
-            file_path = ydl.prepare_filename(info)
+        file_path, title = await loop.run_in_executor(None, download_video, url)
 
         if not os.path.exists(file_path):
-            return await m.edit("❌ File download nahi hui, link check karo.")
+            return await m.edit("❌ Download fail hua.")
 
-        await m.edit("📡 Streaming start ho raha hai...")
-        await call_py.play(message.chat.id, MediaStream(file_path))
-        await m.edit(f"🎬 **Playing:** `{info['title']}`\n\n⏸ /pause | ▶️ /resume | ⏹ /stop")
+        await m.edit("📡 Joining voice chat...")
+
+        chat = await assistant.get_chat(message.chat.id)
+        await ntg.play(
+            message.chat.id,
+            file_path,
+        )
+
+        await m.edit(f"🎬 **Playing:** `{title}`\n\n⏹ /stop")
 
     except Exception as e:
-        logger.error(f"Play Error: {e}")
-        await message.reply(f"❌ Error: `{e}`")
-
-@bot.on_message(filters.command("pause") & filters.group)
-async def pause_handler(_, message):
-    try:
-        await call_py.pause_stream(message.chat.id)
-        await message.reply("⏸ Paused.")
-    except Exception as e:
-        await message.reply(f"❌ Error: `{e}`")
-
-@bot.on_message(filters.command("resume") & filters.group)
-async def resume_handler(_, message):
-    try:
-        await call_py.resume_stream(message.chat.id)
-        await message.reply("▶️ Resumed.")
-    except Exception as e:
+        logger.error(f"Play Error: {e}", exc_info=True)
         await message.reply(f"❌ Error: `{e}`")
 
 @bot.on_message(filters.command("stop") & filters.group)
 async def stop_handler(_, message):
     try:
-        await call_py.leave_call(message.chat.id)
+        await ntg.stop(message.chat.id)
         clear_downloads()
-        await message.reply("⏹ Stopped & downloads cleared.")
+        await message.reply("⏹ Stopped.")
     except Exception as e:
         await message.reply(f"❌ Error: `{e}`")
 
@@ -148,10 +133,8 @@ async def main():
         logger.info("✅ Bot started")
         await assistant.start()
         logger.info("✅ Assistant started")
-        await call_py.start()
-        logger.info("✅ PyTgCalls started")
         await start_web_server()
-        logger.info("🚀 Everything is online!")
+        logger.info("🚀 All systems online!")
         await idle()
     except Exception as e:
         logger.critical(f"❌ Startup Failed: {e}", exc_info=True)
