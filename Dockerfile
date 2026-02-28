@@ -9,15 +9,14 @@ COPY . .
 
 RUN pip install --no-cache-dir -U pip
 
+# Exact pinned versions — YukkiMusicBot production stack
 RUN pip install --no-cache-dir \
-    pyrogram \
-    tgcrypto \
-    yt-dlp \
-    aiohttp \
-    python-dotenv
-
-# py-tgcalls = sahi package, ntgcalls automatically install hoga iske saath
-RUN pip install --no-cache-dir py-tgcalls
+    "pyrogram==2.0.106" \
+    "TgCrypto==1.2.5" \
+    "py-tgcalls==0.9.5" \
+    "yt-dlp" \
+    "aiohttp" \
+    "python-dotenv"
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONFAULTHANDLER=1
