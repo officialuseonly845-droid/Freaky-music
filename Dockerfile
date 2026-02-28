@@ -6,10 +6,9 @@ RUN apt-get update && apt-get install -y ffmpeg python3-pip git
 WORKDIR /app
 COPY . .
 
-# Pehle pip ko upgrade karein phir compatible libraries install karein
+# Sabhi libraries ko ek saath install karein taaki dependency conflict na ho
 RUN pip install --no-cache-dir -U pip
-RUN pip install --no-cache-dir pyrogram tgcrypto yt-dlp aiohttp python-dotenv
-RUN pip install --no-cache-dir pytgcalls==0.9.10
+RUN pip install --no-cache-dir pyrogram tgcrypto yt-dlp aiohttp python-dotenv pytgcalls
 
 # Bot start karne ki command
 CMD ["python", "bot.py"]
