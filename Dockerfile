@@ -18,8 +18,3 @@ RUN pip install --no-cache-dir \
     yt-dlp \
     aiohttp \
     python-dotenv
-
-# pytgcalls 2.1.0 — latest stable, tgcalls dependency nahi hai
-RUN pip install --no-cache-dir "pytgcalls==2.1.0"
-
-CMD ["python", "bot.py"]
