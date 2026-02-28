@@ -14,8 +14,10 @@ RUN pip install --no-cache-dir \
     tgcrypto \
     yt-dlp \
     aiohttp \
-    python-dotenv \
-    ntgcalls
+    python-dotenv
+
+# py-tgcalls = sahi package, ntgcalls automatically install hoga iske saath
+RUN pip install --no-cache-dir py-tgcalls
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONFAULTHANDLER=1
