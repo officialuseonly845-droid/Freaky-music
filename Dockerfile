@@ -1,25 +1,18 @@
-FROM python:3.10-slim
+# Slim ki jagah full image use kar rahe hain taaki dependency conflict na ho
+FROM python:3.10
 
-# System tools install karein jo 'tgcalls' build karne ke liye chahiye
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    python3-pip \
-    git \
-    build-essential \
-    python3-dev
+# System updates aur FFmpeg
+RUN apt-get update && apt-get install -y ffmpeg git
 
 WORKDIR /app
 COPY . .
 
-# Pip upgrade karein
+# Sabse pehle pip upgrade
 RUN pip install --no-cache-dir -U pip
 
-# Sabse pehle base libraries
+# Sabse stable libraries ka combination
 RUN pip install --no-cache-dir pyrogram tgcrypto yt-dlp aiohttp python-dotenv
-
-# Ab pytgcalls install karein (Version 2.0.0.dev24 ya latest stable)
-# Hum 'wayla' extra use karenge jo modern streaming ke liye hai
 RUN pip install --no-cache-dir pytgcalls==2.0.0.dev24
 
-# Bot start karne ki command
+# Bot start command
 CMD ["python", "bot.py"]
