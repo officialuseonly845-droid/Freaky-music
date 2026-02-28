@@ -14,11 +14,12 @@ RUN pip install --no-cache-dir \
     tgcrypto \
     yt-dlp \
     aiohttp \
-    python-dotenv \
-    ntgcalls \
-    pytgcalls
+    python-dotenv
 
-# Runtime errors clearly dikhane ke liye
+RUN pip install --no-cache-dir ntgcalls
+
+RUN pip install --no-cache-dir --pre --no-deps pytgcalls
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONFAULTHANDLER=1
 
