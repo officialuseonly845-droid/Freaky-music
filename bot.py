@@ -7,29 +7,32 @@ from pyrogram import Client, filters, idle
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality, VideoQuality
 
-# ─── LOGGING ────────────────────────────────────────────────────────────────
+# ─── LOGGING ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# ─── CONFIG ─────────────────────────────────────────────────────────────────
+# ─── CONFIG ──────────────────────────────────────────────────────────────────
 API_ID         = int(os.getenv("API_ID", "0"))
 API_HASH       = os.getenv("API_HASH", "")
 BOT_TOKEN      = os.getenv("BOT_TOKEN", "")
 SESSION_STRING = os.getenv("SESSION_STRING", "")
 
 if not all([API_ID, API_HASH, BOT_TOKEN, SESSION_STRING]):
-    logger.critical("❌ Env variables missing! API_ID, API_HASH, BOT_TOKEN, SESSION_STRING zaroori hain.")
+    logger.critical("❌ ENV variables missing: API_ID, API_HASH, BOT_TOKEN, SESSION_STRING")
     raise SystemExit(1)
 
-# ─── CLIENTS ────────────────────────────────────────────────────────────────
-bot       = Client("VideoBot",   API_ID, API_HASH, bot_token=BOT_TOKEN)
-assistant = Client("Assistant",  API_ID, API_HASH, session_string=SESSION_STRING)
+# cookies.txt ka path — bot.py ke saath same folder mein hona chahiye
+COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+
+# ─── CLIENTS ─────────────────────────────────────────────────────────────────
+bot       = Client("VideoBot",  API_ID, API_HASH, bot_token=BOT_TOKEN)
+assistant = Client("Assistant", API_ID, API_HASH, session_string=SESSION_STRING)
 call_py   = PyTgCalls(assistant)
 
-# ─── HELPERS ────────────────────────────────────────────────────────────────
+# ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 async def join_assistant(chat_id: int):
     try:
@@ -45,21 +48,22 @@ async def join_assistant(chat_id: int):
             return f"❌ Assistant group mein join nahi kar paya:\n`{e}`"
 
 def get_stream_url(url: str):
-    """YouTube se direct CDN stream URL — koi download nahi"""
+    """YouTube se direct CDN stream URL — koi download nahi, cookies se auth"""
     ydl_opts = {
         "format": "best[height<=480][ext=mp4]/best[ext=mp4]/best",
         "quiet": True,
         "noplaylist": True,
         "no_warnings": True,
+        "cookiefile": COOKIES_FILE,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         return info["url"], info.get("title", "Unknown Title")
 
-# ─── UPTIME HTTP SERVER ──────────────────────────────────────────────────────
+# ─── UPTIME HTTP SERVER ───────────────────────────────────────────────────────
 
 async def health_check(request):
-    return web.Response(text="✅ Bot is alive and running!")
+    return web.Response(text="✅ Bot is alive!")
 
 async def start_web_server():
     app = web.Application()
@@ -69,14 +73,9 @@ async def start_web_server():
     port = int(os.getenv("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info(f"✅ HTTP uptime server started on port {port}")
+    logger.info(f"✅ HTTP uptime server on port {port}")
 
-# ─── GLOBAL ERROR HANDLER ───────────────────────────────────────────────────
-
-async def global_error_handler(_, message, exception):
-    logger.error(f"Global error caught: {exception}", exc_info=exception)
-
-# ─── COMMANDS ───────────────────────────────────────────────────────────────
+# ─── COMMANDS ─────────────────────────────────────────────────────────────────
 
 @bot.on_message(filters.command("start"))
 async def start_handler(_, message):
@@ -131,7 +130,7 @@ async def play_handler(_, message):
             logger.error(f"PyTgCalls play error: {e}")
             return await m.edit(
                 f"❌ Voice chat mein stream nahi chala:\n`{e}`\n\n"
-                "💡 Make sure assistant ko VC mein invite karo."
+                "💡 Assistant ko VC mein invite karo aur Admin rights do."
             )
 
         await m.edit(
@@ -170,7 +169,7 @@ async def stop_handler(_, message):
     except Exception as e:
         await message.reply(f"❌ Error: `{e}`")
 
-# ─── MAIN ───────────────────────────────────────────────────────────────────
+# ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 async def main():
     try:
@@ -185,7 +184,7 @@ async def main():
 
         await start_web_server()
 
-        logger.info("🚀 Bot fully online! Waiting for messages...")
+        logger.info("🚀 Bot fully online!")
         await idle()
 
     except Exception as e:
